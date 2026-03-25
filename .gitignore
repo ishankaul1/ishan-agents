@@ -1,0 +1,36 @@
+# uv / Python
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# uv lock is intentionally committed — remove this line if you want to ignore it
+# uv.lock
+
+# env
+.env
+.env.*
+!.env.example
+
+# type checkers / linters
+.mypy_cache/
+.ruff_cache/
+
+# pytest
+.pytest_cache/
+.coverage
+htmlcov/
+
+# editors
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+
+# experiment outputs (harbor)
+trials/

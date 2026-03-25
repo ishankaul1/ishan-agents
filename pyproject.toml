@@ -14,3 +14,10 @@ dev = [
     "pytest>=8.4.2",
     "ruff>=0.15.7",
 ]
+
+[tool.ruff]
+line-length = 150
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+
