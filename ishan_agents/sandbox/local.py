@@ -27,7 +27,5 @@ class LocalSandbox(Sandbox):
 
     def grep(self, pattern: str, path: str) -> str:
         self._resolve(path)
-        result = subprocess.run(
-            ["grep", "-rn", pattern, path], cwd=self.work_dir, capture_output=True, text=True
-        )
+        result = subprocess.run(["grep", "-rn", pattern, path], cwd=self.work_dir, capture_output=True, text=True)
         return result.stdout
