@@ -2,8 +2,8 @@
 
 ## Up next
 
-- [ ] Implement `claude_code` tools (`fs.py` — Read, Write, Edit, Glob, Grep; `shell.py` — Bash)
-- [ ] Implement the agent turn loop in `agent.py` (Anthropic client, tool dispatch, max_turns)
+- [x] Implement `claude_code` tools (Read, Write, Edit, Glob, Grep; Bash)
+- [x] Implement the agent turn loop in `agent.py` (Anthropic client, tool dispatch, max_turns)
 - [ ] Harbor integration + run SWE-bench
       - `run_agent_loop(sandbox, tools, config)` — core loop, creates tools, calls API, dispatches execution
       - Harbor integration = `HarborSandbox` + pass to `run_agent_loop` with experiment config
