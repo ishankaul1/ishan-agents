@@ -1,6 +1,6 @@
 # ishan-agents
 
-A minimal coding agent harness to run experiments.
+Coding agent eval & experimentation repo.
 
 ## Dev
 
