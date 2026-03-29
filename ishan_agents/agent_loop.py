@@ -1,27 +1,74 @@
-import os
-
+import anthropic
 from dotenv import load_dotenv
 
+from ishan_agents.sandbox.base import Sandbox
+from ishan_agents.tools.base import BaseTool
+
 load_dotenv()
-# Core agent runner
-# V0 Impl will just keep running Anthropic responses client in a loop until no tools generated/
 
 
-# Observability/eval will be run in a separate script; likely just harbor
-
-
-def _base_agent_system_prompt(work_dir: str) -> str:
+def _base_system_prompt(sandbox: Sandbox) -> str:
     return (
         f"You are a coding agent. You must try your best to solve the task at hand autonomously; "
-        f"the user will never respond to you. All file paths and bash commands run from {work_dir}. "
+        f"the user will never respond to you. All file paths and bash commands run from {sandbox.work_dir}. "
         f"Use relative paths from there or absolute paths."
     )
 
 
-def run_agent_loop(self, work_dir: str, user_message: str, model_name: int, max_turns: int):
-    assert os.path.isdir(work_dir), f"work_dir does not exist: {work_dir}"
-    assert max_turns >= 0, f"max_turns <= 0: {max_turns}"
+def run_agent_loop(
+    model: str,
+    sandbox: Sandbox,
+    tools: list[BaseTool],
+    user_message: str,
+    system_prompt: str | None = None,
+    max_turns: int = 50,
+) -> list:
+    assert max_turns > 0, f"max_turns must be > 0, got {max_turns}"
 
-    # system_prompt = _base_agent_system_prompt(work_dir=work_dir)
+    client = anthropic.Anthropic()
+    tool_map = {t.name: t for t in tools}
+    system = system_prompt or _base_system_prompt(sandbox)
+    messages = [{"role": "user", "content": user_message}]
 
-    # TODO(ishankaul1), 03/23/2026): Finish Impl
+    for _ in range(max_turns):
+        response = client.messages.create(
+            model=model,
+            max_tokens=16000,
+            system=system,
+            tools=[t.to_claude() for t in tools],
+            messages=messages,
+        )
+
+        messages.append({"role": "assistant", "content": response.content})
+
+        if response.stop_reason == "end_turn":
+            break
+
+        tool_use_blocks = [b for b in response.content if b.type == "tool_use"]
+        if not tool_use_blocks:
+            break
+
+        tool_results = []
+        for block in tool_use_blocks:
+            tool = tool_map.get(block.name)
+            if tool is None:
+                result = f"Error: unknown tool '{block.name}'"
+                is_error = True
+            else:
+                try:
+                    result = tool.execute(**block.input)
+                    is_error = False
+                except Exception as e:
+                    result = f"Error: {e}"
+                    is_error = True
+
+            tool_results.append({
+                "type": "tool_result",
+                "tool_use_id": block.id,
+                "content": result,
+                "is_error": is_error,
+            })
+
+        messages.append({"role": "user", "content": tool_results})
+
+    return messages

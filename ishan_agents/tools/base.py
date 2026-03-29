@@ -13,7 +13,7 @@ class BaseTool(ABC):
         self._sandbox = sandbox
 
     @abstractmethod
-    def execute(self, **kwargs) -> str: ...
+    def execute(self, *args, **kwargs) -> str: ...
 
     @property
     def loggable_name(self) -> str:
