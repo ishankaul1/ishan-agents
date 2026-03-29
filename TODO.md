@@ -11,9 +11,11 @@
       - NOTE: Smoke test the setup against a small SWEbench run here
 - [ ] Experiment config/handler — parameterize loop configs (model, tools, sandbox, prompts) for systematic runs
 - [ ] Integrate with an RL provider (Tinker API or TRL; probably start with Tinker)
+- [ ] Actual experiments!!!!
 
 ## Backlog
 
 - [ ] Docker and/or a real sandbox (gvisor or firecracker)
 - [ ] OpenAI tool namespace
+
 
