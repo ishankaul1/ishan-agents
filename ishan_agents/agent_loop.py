@@ -49,6 +49,8 @@ def run_agent_loop(
             break
 
         tool_results = []
+
+        # TODO parallelize over multi tool calls?
         for block in tool_use_blocks:
             tool = tool_map.get(block.name)
             if tool is None:

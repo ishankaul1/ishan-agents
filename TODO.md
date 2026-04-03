@@ -9,7 +9,11 @@
       - Harbor integration = `HarborSandbox` + pass to `run_agent_loop` with experiment config
       - Harbor requires subclassing its `Agent` class — `HarborAgent` wraps `run_agent_loop` and satisfies that interface
       - NOTE: Smoke test the setup against a small SWEbench run here
-- [ ] Experiment config/handler — parameterize loop configs (model, tools, sandbox, prompts) for systematic runs
+- [ ] Experiment config/handler — meaty eng job, covers:
+      - Provider abstraction (wraps client + message format + tool format) to swap Anthropic ↔ OpenAI-compatible (Tinker)
+      - `ExperimentConfig` dataclass: model, provider, tools, sandbox, system prompt, max_turns, etc.
+      - `run_agent_loop` takes a config instead of individual params
+      - Config serialization (JSON/YAML) for reproducibility + logging
 - [ ] Integrate with an RL provider (Tinker API or TRL; probably start with Tinker)
 - [ ] Actual experiments!!!!
 
