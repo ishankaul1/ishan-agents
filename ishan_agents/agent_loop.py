@@ -15,7 +15,7 @@ def _base_system_prompt(sandbox: Sandbox) -> str:
     )
 
 
-def run_agent_loop(
+async def run_agent_loop(
     model: str,
     sandbox: Sandbox,
     tools: list[BaseTool],
@@ -25,13 +25,13 @@ def run_agent_loop(
 ) -> list:
     assert max_turns > 0, f"max_turns must be > 0, got {max_turns}"
 
-    client = anthropic.Anthropic()
+    client = anthropic.AsyncAnthropic()
     tool_map = {t.name: t for t in tools}
     system = system_prompt or _base_system_prompt(sandbox)
     messages = [{"role": "user", "content": user_message}]
 
     for _ in range(max_turns):
-        response = client.messages.create(
+        response = await client.messages.create(
             model=model,
             max_tokens=16000,
             system=system,
@@ -50,7 +50,7 @@ def run_agent_loop(
 
         tool_results = []
 
-        # TODO parallelize over multi tool calls?
+        # TODO: parallelize parallel tool calls
         for block in tool_use_blocks:
             tool = tool_map.get(block.name)
             if tool is None:
@@ -58,7 +58,7 @@ def run_agent_loop(
                 is_error = True
             else:
                 try:
-                    result = tool.execute(**block.input)
+                    result = await tool.execute(**block.input)
                     is_error = False
                 except Exception as e:
                     result = f"Error: {e}"

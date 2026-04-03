@@ -32,41 +32,48 @@ def test_resolve_absolute_path_outside_raises(sandbox):
 # --- LocalSandbox ---
 
 
-def test_read_write_roundtrip(sandbox):
-    sandbox.write("hello.txt", "world")
-    assert sandbox.read("hello.txt") == "world"
+@pytest.mark.asyncio
+async def test_read_write_roundtrip(sandbox):
+    await sandbox.write("hello.txt", "world")
+    assert await sandbox.read("hello.txt") == "world"
 
 
-def test_write_creates_nested_dirs(sandbox):
-    sandbox.write("a/b/c.txt", "nested")
-    assert sandbox.read("a/b/c.txt") == "nested"
+@pytest.mark.asyncio
+async def test_write_creates_nested_dirs(sandbox):
+    await sandbox.write("a/b/c.txt", "nested")
+    assert await sandbox.read("a/b/c.txt") == "nested"
 
 
-def test_read_missing_file_raises(sandbox):
+@pytest.mark.asyncio
+async def test_read_missing_file_raises(sandbox):
     with pytest.raises(FileNotFoundError):
-        sandbox.read("nope.txt")
+        await sandbox.read("nope.txt")
 
 
-def test_bash_runs_command(sandbox):
-    out = sandbox.bash("echo hello")
+@pytest.mark.asyncio
+async def test_bash_runs_command(sandbox):
+    out = await sandbox.bash("echo hello")
     assert out.strip() == "hello"
 
 
-def test_bash_stderr_captured(sandbox):
-    out = sandbox.bash("echo err >&2")
+@pytest.mark.asyncio
+async def test_bash_stderr_captured(sandbox):
+    out = await sandbox.bash("echo err >&2")
     assert "err" in out
 
 
-def test_glob_finds_files(sandbox):
-    sandbox.write("a.py", "")
-    sandbox.write("b.py", "")
-    sandbox.write("c.txt", "")
-    results = sandbox.glob("*.py")
+@pytest.mark.asyncio
+async def test_glob_finds_files(sandbox):
+    await sandbox.write("a.py", "")
+    await sandbox.write("b.py", "")
+    await sandbox.write("c.txt", "")
+    results = await sandbox.glob("*.py")
     assert set(results) == {"a.py", "b.py"}
 
 
-def test_grep_finds_match(sandbox):
-    sandbox.write("foo.txt", "hello world\nbye world\n")
-    out = sandbox.grep("hello", "foo.txt")
+@pytest.mark.asyncio
+async def test_grep_finds_match(sandbox):
+    await sandbox.write("foo.txt", "hello world\nbye world\n")
+    out = await sandbox.grep("hello", "foo.txt")
     assert "hello" in out
     assert "bye" not in out

@@ -1,3 +1,5 @@
+import asyncio
+
 import click
 
 from ishan_agents.agent_loop import run_agent_loop
@@ -21,13 +23,11 @@ def resolve_tools(tool_specs: tuple[str, ...], sandbox: LocalSandbox) -> list:
     selected = {}
     for spec in tool_specs:
         if "." in spec:
-            # specific tool e.g. claude_code.Bash
             tool = all_namespace_tools.get(spec)
             if tool is None:
                 raise click.BadParameter(f"Unknown tool '{spec}'. Available: {list(all_namespace_tools)}")
             selected[spec] = tool
         else:
-            # whole namespace e.g. claude_code
             ns_tools = all_namespace_tools_by_ns.get(spec)
             if ns_tools is None:
                 raise click.BadParameter(f"Unknown namespace '{spec}'. Available: {list(_NAMESPACE_REGISTRY)}")
@@ -59,15 +59,16 @@ def main(model: str, work_dir: str, tools: tuple[str, ...], system_prompt: str |
     click.echo(f"Tools:   {[t.loggable_name for t in resolved_tools]}")
     click.echo(f"Message: {message}\n")
 
-    messages = run_agent_loop(
-        model=model,
-        sandbox=sandbox,
-        tools=resolved_tools,
-        user_message=message,
-        system_prompt=system_prompt,
+    messages = asyncio.run(
+        run_agent_loop(
+            model=model,
+            sandbox=sandbox,
+            tools=resolved_tools,
+            user_message=message,
+            system_prompt=system_prompt,
+        )
     )
 
-    # Print final assistant text response
     for msg in reversed(messages):
         if msg["role"] == "assistant":
             for block in msg["content"]:

@@ -4,7 +4,7 @@ from ishan_agents.tools.base import BaseTool
 class ReadTool(BaseTool):
     name = "Read"
     namespace = "claude_code"
-    description = "Read a file from the filesystem. Returns the file contents with line numbers."
+    description = "Read a file from the filesystem. Returns the file contents."
     parameters = {
         "type": "object",
         "properties": {
@@ -15,8 +15,8 @@ class ReadTool(BaseTool):
         "required": ["file_path"],
     }
 
-    def execute(self, file_path: str, offset: int | None = None, limit: int | None = None) -> str:
-        content = self._sandbox.read(file_path)
+    async def execute(self, file_path: str, offset: int | None = None, limit: int | None = None) -> str:
+        content = await self._sandbox.read(file_path)
         if offset is not None or limit is not None:
             lines = content.splitlines(keepends=True)
             if offset is not None:
@@ -40,8 +40,8 @@ class WriteTool(BaseTool):
         "required": ["file_path", "content"],
     }
 
-    def execute(self, file_path: str, content: str) -> str:
-        return self._sandbox.write(file_path, content)
+    async def execute(self, file_path: str, content: str) -> str:
+        return await self._sandbox.write(file_path, content)
 
 
 class EditTool(BaseTool):
@@ -62,15 +62,15 @@ class EditTool(BaseTool):
         "required": ["file_path", "old_string", "new_string"],
     }
 
-    def execute(self, file_path: str, old_string: str, new_string: str, replace_all: bool = False) -> str:
-        content = self._sandbox.read(file_path)
+    async def execute(self, file_path: str, old_string: str, new_string: str, replace_all: bool = False) -> str:
+        content = await self._sandbox.read(file_path)
         if old_string not in content:
             raise ValueError(f"old_string not found in {file_path}")
         if not replace_all and content.count(old_string) > 1:
             raise ValueError(f"old_string matches multiple locations in {file_path}; use replace_all=true")
         count = None if replace_all else 1
         new_content = content.replace(old_string, new_string, count or -1)
-        return self._sandbox.write(file_path, new_content)
+        return await self._sandbox.write(file_path, new_content)
 
 
 class GlobTool(BaseTool):
@@ -86,10 +86,10 @@ class GlobTool(BaseTool):
         "required": ["pattern"],
     }
 
-    def execute(self, pattern: str, path: str | None = None) -> str:
+    async def execute(self, pattern: str, path: str | None = None) -> str:
         if path:
             pattern = f"{path.rstrip('/')}/{pattern}"
-        results = self._sandbox.glob(pattern)
+        results = await self._sandbox.glob(pattern)
         return "\n".join(results) if results else "(no matches)"
 
 
@@ -107,8 +107,8 @@ class GrepTool(BaseTool):
         "required": ["pattern"],
     }
 
-    def execute(self, pattern: str, path: str = ".", include: str | None = None) -> str:
-        return self._sandbox.grep(pattern, path)
+    async def execute(self, pattern: str, path: str = ".", include: str | None = None) -> str:
+        return await self._sandbox.grep(pattern, path)
 
 
 class BashTool(BaseTool):
@@ -125,5 +125,5 @@ class BashTool(BaseTool):
         "required": ["command"],
     }
 
-    def execute(self, command: str, description: str | None = None, timeout: int | None = None) -> str:
-        return self._sandbox.bash(command)
+    async def execute(self, command: str, description: str | None = None, timeout: int | None = None) -> str:
+        return await self._sandbox.bash(command)
