@@ -59,7 +59,7 @@ def main(model: str, work_dir: str, tools: tuple[str, ...], system_prompt: str |
     click.echo(f"Tools:   {[t.loggable_name for t in resolved_tools]}")
     click.echo(f"Message: {message}\n")
 
-    messages = asyncio.run(
+    result = asyncio.run(
         run_agent_loop(
             model=model,
             sandbox=sandbox,
@@ -69,7 +69,7 @@ def main(model: str, work_dir: str, tools: tuple[str, ...], system_prompt: str |
         )
     )
 
-    for msg in reversed(messages):
+    for msg in reversed(result.messages):
         if msg["role"] == "assistant":
             for block in msg["content"]:
                 if hasattr(block, "type") and block.type == "text":

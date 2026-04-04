@@ -15,6 +15,12 @@ def _base_system_prompt(sandbox: Sandbox) -> str:
     )
 
 
+class LoopResult:
+    def __init__(self, messages: list, turn_usages: list):
+        self.messages = messages
+        self.turn_usages = turn_usages  # one anthropic Usage object per agent turn
+
+
 async def run_agent_loop(
     model: str,
     sandbox: Sandbox,
@@ -22,13 +28,14 @@ async def run_agent_loop(
     user_message: str,
     system_prompt: str | None = None,
     max_turns: int = 50,
-) -> list:
+) -> LoopResult:
     assert max_turns > 0, f"max_turns must be > 0, got {max_turns}"
 
     client = anthropic.AsyncAnthropic()
     tool_map = {t.name: t for t in tools}
     system = system_prompt or _base_system_prompt(sandbox)
     messages = [{"role": "user", "content": user_message}]
+    turn_usages = []
 
     for _ in range(max_turns):
         response = await client.messages.create(
@@ -40,6 +47,7 @@ async def run_agent_loop(
         )
 
         messages.append({"role": "assistant", "content": response.content})
+        turn_usages.append(response.usage)
 
         if response.stop_reason == "end_turn":
             break
@@ -73,4 +81,4 @@ async def run_agent_loop(
 
         messages.append({"role": "user", "content": tool_results})
 
-    return messages
+    return LoopResult(messages=messages, turn_usages=turn_usages)
