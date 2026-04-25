@@ -1,0 +1,25 @@
+# 2-task smoke test: Qwen2.5-Coder-32B via Fireworks on SWE-bench Verified
+#
+# Usage (from ishan-agents root):
+#   uv run harbor run -c experiments/swebench_fireworks_qwen.yaml --env-file .env
+
+jobs_dir: jobs
+n_attempts: 1
+orchestrator:
+  type: local
+  n_concurrent_trials: 1
+  quiet: false
+environment:
+  type: docker
+  force_build: false
+  delete: true
+agents:
+  - import_path: ishan_agents.harbor.agent:HarborAgent
+    model_name: accounts/fireworks/models/qwen2p5-coder-32b-instruct
+    kwargs:
+      provider: fireworks
+datasets:
+  - name: swe-bench-verified
+    version: "1.0"
+    registry: {}
+    n_tasks: 2

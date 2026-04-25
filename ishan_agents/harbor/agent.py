@@ -19,7 +19,7 @@ from loguru import logger
 
 from ishan_agents.agent_loop import LoopResult, default_system_prompt, run_agent_loop
 from ishan_agents.harbor.sandbox import HarborSandbox
-from ishan_agents.llms.anthropic_client import AnthropicClient
+from ishan_agents.llms.factory import make_client
 from ishan_agents.log import add_file_sink, configure_stdout_logging
 
 DEFAULT_MODEL = "claude-sonnet-4-6"
@@ -112,6 +112,7 @@ class HarborAgent(BaseAgent):
 
     def __init__(
         self,
+        provider: str = "anthropic",
         tools: list[str] | None = None,
         system_prompt: str | None = None,
         max_turns: int = 50,
@@ -119,6 +120,7 @@ class HarborAgent(BaseAgent):
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
+        self._provider = provider
         self._tool_specs = tools or DEFAULT_TOOLS
         self._system_prompt = system_prompt
         self._max_turns = max_turns
@@ -150,7 +152,7 @@ class HarborAgent(BaseAgent):
             work_dir = (pwd.stdout or "").strip() or "/"
 
             sandbox = HarborSandbox(environment, work_dir)
-            client = AnthropicClient(model)
+            client = make_client(self._provider, model)
 
             result = await run_agent_loop(
                 client=client,

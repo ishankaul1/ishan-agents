@@ -13,8 +13,6 @@ environment:
   type: docker
   force_build: false
   delete: true
-  env:
-    - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
 agents:
   - import_path: ishan_agents.harbor.agent:HarborAgent
     model_name: claude-sonnet-4-6

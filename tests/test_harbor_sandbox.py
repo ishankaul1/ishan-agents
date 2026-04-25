@@ -24,12 +24,12 @@ def make_env(stdout: str = "", stderr: str = "", return_code: int = 0):
 
 def test_resolve_relative():
     sb = HarborSandbox(make_env(), "/testbed")
-    assert sb._resolve("foo/bar.py") == "/testbed/foo/bar.py"
+    assert str(sb._resolve("foo/bar.py")) == "/testbed/foo/bar.py"
 
 
 def test_resolve_absolute_inside():
     sb = HarborSandbox(make_env(), "/testbed")
-    assert sb._resolve("/testbed/foo.py") == "/testbed/foo.py"
+    assert str(sb._resolve("/testbed/foo.py")) == "/testbed/foo.py"
 
 
 def test_resolve_traversal_raises():
