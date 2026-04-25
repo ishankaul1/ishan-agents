@@ -1,84 +1,91 @@
-import anthropic
 from dotenv import load_dotenv
+from loguru import logger
 
+from ishan_agents.llms.base import LLMClient, Message, ToolResult
 from ishan_agents.sandbox.base import Sandbox
+from ishan_agents.tools import resolve_tools
 from ishan_agents.tools.base import BaseTool
 
 load_dotenv()
 
 
-def _base_system_prompt(sandbox: Sandbox) -> str:
+def default_system_prompt(work_dir) -> str:
     return (
         f"You are a coding agent. You must try your best to solve the task at hand autonomously; "
-        f"the user will never respond to you. All file paths and bash commands run from {sandbox.work_dir}. "
+        f"the user will never respond to you. All file paths and bash commands run from {work_dir}. "
         f"Use relative paths from there or absolute paths."
     )
 
 
 class LoopResult:
-    def __init__(self, messages: list, turn_usages: list):
+    def __init__(self, messages: list[Message], tools: list[BaseTool]):
         self.messages = messages
-        self.turn_usages = turn_usages  # one anthropic Usage object per agent turn
+        self.tools = tools
+
+    @property
+    def turn_usages(self):
+        return [m.usage for m in self.messages if m.role == "assistant" and m.usage is not None]
 
 
 async def run_agent_loop(
-    model: str,
+    client: LLMClient,
     sandbox: Sandbox,
-    tools: list[BaseTool],
+    tools: list[str],
     user_message: str,
     system_prompt: str | None = None,
     max_turns: int = 50,
 ) -> LoopResult:
     assert max_turns > 0, f"max_turns must be > 0, got {max_turns}"
 
-    client = anthropic.AsyncAnthropic()
-    tool_map = {t.name: t for t in tools}
-    system = system_prompt or _base_system_prompt(sandbox)
-    messages = [{"role": "user", "content": user_message}]
-    turn_usages = []
+    resolved = resolve_tools(tools, sandbox)
+    tool_map = {t.name: t for t in resolved}
+    messages: list[Message] = [Message.user(user_message)]
 
-    for _ in range(max_turns):
-        response = await client.messages.create(
-            model=model,
-            max_tokens=16000,
-            system=system,
-            tools=[t.to_claude() for t in tools],
-            messages=messages,
+    logger.info(f"Starting agent loop | tools={[t.name for t in resolved]} | max_turns={max_turns}")
+
+    for turn in range(max_turns):
+        response = await client.call(messages=messages, tools=resolved, system=system_prompt)
+        messages.append(Message.from_response(response))
+
+        usage = response.usage
+        logger.info(
+            f"[turn {turn + 1}] stop={response.stop_reason} | "
+            f"in={usage.input_tokens} out={usage.output_tokens} cache={usage.cache_read_tokens}"
         )
+        if response.content:
+            preview = response.content[:300].replace("\n", " ")
+            logger.info(f"[turn {turn + 1}] text: {preview}{'...' if len(response.content) > 300 else ''}")
 
-        messages.append({"role": "assistant", "content": response.content})
-        turn_usages.append(response.usage)
-
-        if response.stop_reason == "end_turn":
-            break
-
-        tool_use_blocks = [b for b in response.content if b.type == "tool_use"]
-        if not tool_use_blocks:
+        if response.stop_reason == "end_turn" or not response.tool_calls:
             break
 
         tool_results = []
+        for tc in response.tool_calls:
+            input_preview = str(tc.input)[:200]
+            logger.info(f"[turn {turn + 1}] → {tc.name}({input_preview})")
 
-        # TODO: parallelize parallel tool calls
-        for block in tool_use_blocks:
-            tool = tool_map.get(block.name)
+            tool = tool_map.get(tc.name)
             if tool is None:
-                result = f"Error: unknown tool '{block.name}'"
+                content = f"Error: unknown tool '{tc.name}'"
                 is_error = True
             else:
                 try:
-                    result = await tool.execute(**block.input)
+                    content = await tool.execute(**tc.input)
                     is_error = False
                 except Exception as e:
-                    result = f"Error: {e}"
+                    content = f"Error: {e}"
                     is_error = True
 
-            tool_results.append({
-                "type": "tool_result",
-                "tool_use_id": block.id,
-                "content": result,
-                "is_error": is_error,
-            })
+            result_preview = content[:300].replace("\n", " ")
+            level = "warning" if is_error else "debug"
+            logger.log(level.upper(), f"[turn {turn + 1}] ← {tc.name}: {result_preview}{'...' if len(content) > 300 else ''}")
 
-        messages.append({"role": "user", "content": tool_results})
+            tool_results.append(ToolResult(tool_call_id=tc.id, content=content, is_error=is_error))
 
-    return LoopResult(messages=messages, turn_usages=turn_usages)
+        messages.append(Message.with_tool_results(tool_results))
+
+    total_in = sum(u.input_tokens for u in [m.usage for m in messages if m.usage])
+    total_out = sum(u.output_tokens for u in [m.usage for m in messages if m.usage])
+    logger.info(f"Agent loop done | turns={turn + 1} | total_in={total_in} total_out={total_out}")
+
+    return LoopResult(messages=messages, tools=resolved)

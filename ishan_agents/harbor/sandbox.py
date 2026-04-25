@@ -1,7 +1,7 @@
 import base64
 import os
 import shlex
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 
 from harbor.environments.base import BaseEnvironment
 
@@ -16,17 +16,17 @@ class HarborSandbox(Sandbox):
         self._env = environment
         self.work_dir = PurePosixPath(work_dir)
 
-    def _resolve(self, path: str) -> str:
+    def _resolve(self, path: str) -> Path:
         """Resolve path relative to work_dir; raise if it escapes the sandbox."""
         work = str(self.work_dir)
         full = os.path.normpath(os.path.join(work, path) if not os.path.isabs(path) else path)
         if full != work and not full.startswith(work + "/"):
             raise ValueError(f"Path escapes sandbox: {path}")
-        return full
+        return Path(full)
 
     async def read(self, path: str) -> str:
         resolved = self._resolve(path)
-        result = await self._env.exec(f"cat {shlex.quote(resolved)}")
+        result = await self._env.exec(f"cat {shlex.quote(resolved.as_posix())}")
         if result.return_code != 0:
             raise FileNotFoundError(f"File not found: {path}")
         return result.stdout or ""
@@ -36,7 +36,7 @@ class HarborSandbox(Sandbox):
         b64 = base64.b64encode(content.encode()).decode()
         await self._env.exec(
             f"mkdir -p {shlex.quote(os.path.dirname(resolved))} && "
-            f"echo {shlex.quote(b64)} | base64 -d > {shlex.quote(resolved)}"
+            f"echo {shlex.quote(b64)} | base64 -d > {shlex.quote(resolved.as_posix())}"
         )
         return f"Written {path}"
 
@@ -59,7 +59,7 @@ class HarborSandbox(Sandbox):
     async def grep(self, pattern: str, path: str) -> str:
         resolved = self._resolve(path)
         result = await self._env.exec(
-            f"grep -rn {shlex.quote(pattern)} {shlex.quote(resolved)}",
+            f"grep -rn {shlex.quote(pattern)} {shlex.quote(resolved.as_posix())}",
             cwd=str(self.work_dir),
         )
         return result.stdout or ""

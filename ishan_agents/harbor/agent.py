@@ -1,4 +1,5 @@
 import json
+import os
 import uuid
 from datetime import datetime, timezone
 
@@ -12,27 +13,23 @@ from harbor.models.trajectories.metrics import Metrics
 from harbor.models.trajectories.observation import Observation
 from harbor.models.trajectories.observation_result import ObservationResult
 from harbor.models.trajectories.step import Step
-from harbor.models.trajectories.tool_call import ToolCall
+from harbor.models.trajectories.tool_call import ToolCall as ATIFToolCall
 from harbor.models.trajectories.trajectory import Trajectory
+from loguru import logger
 
-from ishan_agents.agent_loop import LoopResult, run_agent_loop
+from ishan_agents.agent_loop import LoopResult, default_system_prompt, run_agent_loop
 from ishan_agents.harbor.sandbox import HarborSandbox
-from ishan_agents.tools.claude_code import claude_code_tools
+from ishan_agents.llms.anthropic_client import AnthropicClient
+from ishan_agents.log import add_file_sink, configure_stdout_logging
 
 DEFAULT_MODEL = "claude-sonnet-4-6"
 AGENT_VERSION = "0.1.0"
 TRAJECTORY_FILENAME = "trajectory.json"
-
 AGENT_NAME = "ishan-agents"
+DEFAULT_TOOLS = ["claude_code"]
 
 
-def _build_trajectory(
-    model: str,
-    tools: list,
-    result: LoopResult,
-    session_id: str,
-) -> Trajectory:
-    """Build an ATIF Trajectory from a LoopResult."""
+def _build_trajectory(model: str, tools: list, result: LoopResult, session_id: str) -> Trajectory:
     messages = result.messages
     turn_usages = result.turn_usages
 
@@ -45,83 +42,56 @@ def _build_trajectory(
 
     steps: list[Step] = []
     step_id = 1
-    agent_turn_idx = 0
 
     for i, msg in enumerate(messages):
-        if msg["role"] == "user":
-            # Tool results are paired with the preceding agent step — skip them here.
-            content = msg["content"]
-            if isinstance(content, str):
-                steps.append(Step(
-                    step_id=step_id,
-                    source="user",
-                    message=content,
-                    timestamp=datetime.now(timezone.utc).isoformat(),
-                ))
-                step_id += 1
+        if msg.role == "user" and msg.tool_results is None:
+            steps.append(Step(
+                step_id=step_id,
+                source="user",
+                message=msg.content or "",
+                timestamp=datetime.now(timezone.utc).isoformat(),
+            ))
+            step_id += 1
 
-        elif msg["role"] == "assistant":
-            content = msg["content"]
-
-            # Extract text
-            text_parts = [b.text for b in content if hasattr(b, "type") and b.type == "text"]
-            message_text = "\n".join(text_parts) if text_parts else ""
-
-            # Extract tool calls
-            tool_calls = [
-                ToolCall(
-                    tool_call_id=b.id,
-                    function_name=b.name,
-                    arguments=dict(b.input),
-                )
-                for b in content if hasattr(b, "type") and b.type == "tool_use"
+        elif msg.role == "assistant":
+            atif_tool_calls = [
+                ATIFToolCall(tool_call_id=tc.id, function_name=tc.name, arguments=tc.input)
+                for tc in (msg.tool_calls or [])
             ]
 
-            # Observation: tool results from the immediately following user message.
-            # NOTE: assumes sequential tool execution (one tool_result batch per assistant turn).
-            # Parallel tool calls within the same turn are all captured in that single following
-            # user message, so this still works — but if the loop ever interleaves turns differently
-            # this pairing logic will need revisiting.
             observation = None
-            if tool_calls and i + 1 < len(messages):
+            if atif_tool_calls and i + 1 < len(messages):
                 next_msg = messages[i + 1]
-                if next_msg["role"] == "user" and isinstance(next_msg["content"], list):
+                if next_msg.tool_results:
                     obs_results = [
-                        ObservationResult(
-                            source_call_id=r["tool_use_id"],
-                            content=r.get("content", ""),
-                        )
-                        for r in next_msg["content"]
-                        if r.get("type") == "tool_result"
+                        ObservationResult(source_call_id=r.tool_call_id, content=r.content)
+                        for r in next_msg.tool_results
                     ]
                     if obs_results:
                         observation = Observation(results=obs_results)
 
-            # Metrics from this agent turn
-            usage = turn_usages[agent_turn_idx] if agent_turn_idx < len(turn_usages) else None
             metrics = None
-            if usage:
+            if msg.usage:
                 metrics = Metrics(
-                    prompt_tokens=usage.input_tokens,
-                    completion_tokens=usage.output_tokens,
-                    cached_tokens=getattr(usage, "cache_read_input_tokens", None),
+                    prompt_tokens=msg.usage.input_tokens,
+                    completion_tokens=msg.usage.output_tokens,
+                    cached_tokens=msg.usage.cache_read_tokens or None,
                 )
 
             steps.append(Step(
                 step_id=step_id,
                 source="agent",
-                message=message_text,
-                tool_calls=tool_calls or None,
+                message=msg.content or "",
+                tool_calls=atif_tool_calls or None,
                 observation=observation,
                 metrics=metrics,
                 timestamp=datetime.now(timezone.utc).isoformat(),
             ))
             step_id += 1
-            agent_turn_idx += 1
 
     total_prompt = sum(u.input_tokens for u in turn_usages)
     total_completion = sum(u.output_tokens for u in turn_usages)
-    total_cached = sum(getattr(u, "cache_read_input_tokens", 0) or 0 for u in turn_usages)
+    total_cached = sum(u.cache_read_tokens for u in turn_usages)
 
     return Trajectory(
         schema_version="ATIF-v1.6",
@@ -142,18 +112,16 @@ class HarborAgent(BaseAgent):
 
     def __init__(
         self,
-        tools_factory=None,
+        tools: list[str] | None = None,
         system_prompt: str | None = None,
         max_turns: int = 50,
-        work_dir: str = "/testbed",
         *args,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
-        self._tools_factory = tools_factory or claude_code_tools
+        self._tool_specs = tools or DEFAULT_TOOLS
         self._system_prompt = system_prompt
         self._max_turns = max_turns
-        self._work_dir = work_dir
 
     @staticmethod
     def name() -> str:
@@ -163,39 +131,45 @@ class HarborAgent(BaseAgent):
         return AGENT_VERSION
 
     async def setup(self, environment: BaseEnvironment) -> None:
-        pass  # No CLI to install — we run directly in Python.
+        pass
 
-    async def run(
-        self,
-        instruction: str,
-        environment: BaseEnvironment,
-        context: AgentContext,
-    ) -> None:
+    async def run(self, instruction: str, environment: BaseEnvironment, context: AgentContext) -> None:
         session_id = str(uuid.uuid4())
         model = self.model_name or DEFAULT_MODEL
 
-        sandbox = HarborSandbox(environment, self._work_dir)
-        tools = self._tools_factory(sandbox)
+        configure_stdout_logging()
 
-        result = await run_agent_loop(
-            model=model,
-            sandbox=sandbox,
-            tools=tools,
-            user_message=instruction,
-            system_prompt=self._system_prompt,
-            max_turns=self._max_turns,
-        )
+        log_file = self.logs_dir / "agent.log"
+        file_sink_id = None
+        if os.getenv("AGENT_LOG"):
+            file_sink_id = add_file_sink(log_file)
+            logger.info(f"Logging to: {log_file}")
 
-        # Write ATIF trajectory
-        trajectory = _build_trajectory(model, tools, result, session_id)
-        traj_path = self.logs_dir / TRAJECTORY_FILENAME
-        traj_path.parent.mkdir(parents=True, exist_ok=True)
-        async with aiofiles.open(traj_path, "w") as f:
-            await f.write(json.dumps(trajectory.to_json_dict(), indent=2))
+        try:
+            pwd = await environment.exec("pwd")
+            work_dir = (pwd.stdout or "").strip() or "/"
 
-        # Populate Harbor context with token usage
-        context.n_input_tokens = sum(u.input_tokens for u in result.turn_usages)
-        context.n_output_tokens = sum(u.output_tokens for u in result.turn_usages)
-        context.n_cache_tokens = sum(
-            getattr(u, "cache_read_input_tokens", 0) or 0 for u in result.turn_usages
-        )
+            sandbox = HarborSandbox(environment, work_dir)
+            client = AnthropicClient(model)
+
+            result = await run_agent_loop(
+                client=client,
+                sandbox=sandbox,
+                tools=self._tool_specs,
+                user_message=instruction,
+                system_prompt=self._system_prompt or default_system_prompt(sandbox.work_dir),
+                max_turns=self._max_turns,
+            )
+
+            trajectory = _build_trajectory(model, result.tools, result, session_id)
+            traj_path = self.logs_dir / TRAJECTORY_FILENAME
+            traj_path.parent.mkdir(parents=True, exist_ok=True)
+            async with aiofiles.open(traj_path, "w") as f:
+                await f.write(json.dumps(trajectory.to_json_dict(), indent=2))
+
+            context.n_input_tokens = sum(u.input_tokens for u in result.turn_usages)
+            context.n_output_tokens = sum(u.output_tokens for u in result.turn_usages)
+            context.n_cache_tokens = sum(u.cache_read_tokens for u in result.turn_usages)
+        finally:
+            if file_sink_id is not None:
+                logger.remove(file_sink_id)

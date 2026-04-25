@@ -34,3 +34,4 @@ htmlcov/
 
 # experiment outputs (harbor)
 trials/
+jobs/
