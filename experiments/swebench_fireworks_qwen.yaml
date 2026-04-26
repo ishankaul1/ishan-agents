@@ -19,7 +19,7 @@ agents:
     kwargs:
       provider: fireworks
 datasets:
-  - name: swe-bench-verified
+  - name: swe-bench/swe-bench-verified
     version: "1.0"
     registry: {}
     n_tasks: 2
