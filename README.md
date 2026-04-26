@@ -10,7 +10,7 @@ uv run harbor run -c
 ```
 
 
-Designed to be fully interoperable (Anthropic & OpenAI compat clients (OpenAI, Tinker, Fireworks) already supported), and tools easily enabled through config.
+Designed to be fully interoperable (Anthropic & OpenAI compat clients (OpenAI, Tinker, Fireworks) already supported), and different combos of tools supported through tools param.
 
 Rollout management for RL & context management not impl'ed yet but I plan on it!!
 
