@@ -44,6 +44,7 @@ async def run_agent_loop(
     logger.info(f"Starting agent loop | tools={[t.name for t in resolved]} | max_turns={max_turns}")
 
     # TODO Context management, max token guardrails
+    # Multi-env evals with agent pointing at MCPS could be pretty powerful too.
 
     for turn in range(max_turns):
         response = await client.call(messages=messages, tools=resolved, system=system_prompt)
