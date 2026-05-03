@@ -11,6 +11,8 @@ class OpenAICompatClient(LLMClient):
 
     Pass base_url + api_key to redirect away from api.openai.com.
     Always streams to avoid provider-specific max_tokens restrictions.
+
+    TODO - Won't be able to do this with my FastAPI server. Maybe just force stream for fireworks provider only.
     """
 
     def __init__(self, model: str, base_url: str | None = None, api_key: str | None = None):
